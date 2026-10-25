@@ -1,5 +1,5 @@
 // Offline cache for Pocket Ledger. Bump VERSION whenever index.html changes.
-const VERSION = "pocket-ledger-v2";
+const VERSION = "pocket-ledger-v3";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -20,7 +20,8 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return; // fonts etc. load normally when online
   e.respondWith(
-    fetch(e.request)
+    // "no-cache" skips the phone's HTTP cache (GitHub Pages caches for 10 minutes), so uploads show up on the next open
+    fetch(e.request, { cache: "no-cache" })
       .then((res) => {
         const copy = res.clone();
         caches.open(VERSION).then((c) => c.put(e.request, copy));

@@ -31,6 +31,9 @@
   --accent:#36C48F; --accent-ink:#06130E; --accent-soft:#163329;
   --warn:#E6A84A; --warn-soft:#33270F; --danger:#F07A61; --danger-soft:#3A1A14; --income:#7DB4F0; color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;padding-top:max(12px, env(safe-area-inset-top, 0px))!important}
 body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.45;
   padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:12px 40px}
 .wrap{max-width:520px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
@@ -118,6 +121,36 @@ details.settings summary{cursor:pointer;font-family:var(--display);font-weight:6
 .settings .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
 .note{font-size:12px;color:var(--muted)}
 .bk{display:grid;gap:8px;margin-top:10px}
+#report{max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+.rp-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.rp-sheet{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px;display:flex;flex-direction:column;gap:18px}
+.rp-head{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap;border-bottom:2px solid var(--ink);padding-bottom:10px}
+.rp-head h1{font-size:26px}
+.rp-from{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rp-from input{border:0;border-bottom:1px dashed var(--line);background:transparent;color:var(--ink);font:inherit;font-weight:600;padding:2px 0;width:180px;max-width:100%}
+.rp-sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+.rp-sum div{border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:2px}
+.rp-sum b{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:18px;font-weight:600}
+.rp-catgrid{display:grid;grid-template-columns:160px 1fr;gap:16px;align-items:center;margin-top:8px}
+.rp-pie svg{width:100%;height:auto;display:block}
+.rp-table{width:100%;border-collapse:collapse;font-size:13px}
+.rp-table th,.rp-table td{text-align:left;padding:6px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.rp-table th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600}
+.rp-table td.r,.rp-table th.r{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rp-table i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.rp-scroll{overflow-x:auto;margin-top:8px}
+@media (max-width:480px){.rp-catgrid{grid-template-columns:1fr}.rp-pie{width:160px;margin:0 auto}}
+@media print{
+  @page{margin:14mm}
+  :root{--bg:#fff;--surface:#fff;--ink:#111;--muted:#555;--line:#ccc;color-scheme:light}
+  body{padding:0;background:#fff}
+  .wrap,.rp-actions{display:none!important}
+  #report{display:block!important;max-width:none}
+  .rp-sheet{border:0;padding:0}
+  .rp-from input{border:0}
+  .rp-scroll{overflow:visible}
+  tr{break-inside:avoid}
+}
 .ghost{border:1px solid var(--line);background:var(--bg);border-radius:12px;padding:12px;font-weight:600;text-align:center;font-size:15px;cursor:pointer;color:var(--ink)}
 @media (prefers-reduced-motion: reduce){.bar>i{transition:none}}
 </style>
@@ -198,9 +231,36 @@ details.settings summary{cursor:pointer;font-family:var(--display);font-weight:6
       <label class="ghost" for="importIn">Restore from backup</label>
       <input type="file" id="importIn" accept="application/json,.json" hidden>
       <button class="ghost" id="copyBtn" type="button">Copy this month for Claude</button>
+      <button class="ghost" id="reportBtn" type="button">Monthly report for my parents</button>
     </div>
     <div class="msg" id="bkMsg" role="status"></div>
   </details>
+</div>
+
+<div id="report" hidden>
+  <div class="rp-actions">
+    <button class="primary" id="rpPrint" type="button">Print or save as PDF</button>
+    <button class="ghost" id="rpClose" type="button">Back to the app</button>
+  </div>
+  <article class="rp-sheet">
+    <header class="rp-head">
+      <div>
+        <div class="eyebrow">Monthly spending report</div>
+        <h1 id="rpMonth">October 2026</h1>
+      </div>
+      <div class="rp-from"><span class="eyebrow">From</span><input id="rpName" placeholder="Your name" maxlength="40" aria-label="Your name on the report"></div>
+    </header>
+    <section class="rp-sum" id="rpSum"></section>
+    <section class="rp-cats">
+      <h2>Spending by category</h2>
+      <div class="rp-catgrid"><div class="rp-pie" id="rpPie"></div><table class="rp-table" id="rpCatTable"></table></div>
+    </section>
+    <section>
+      <h2>All entries</h2>
+      <div class="rp-scroll"><table class="rp-table" id="rpList"></table></div>
+    </section>
+    <p class="note" id="rpFoot"></p>
+  </article>
 </div>
 
 <script>
@@ -465,6 +525,48 @@ details.settings summary{cursor:pointer;font-family:var(--display);font-weight:6
     }catch(err){ $("bkMsg").textContent="That file isn't a Pocket Ledger backup."; }
     e.target.value="";
   };
+
+  // ---------- monthly report ----------
+  function el(tag, cls, text){ const e=document.createElement(tag); if(cls) e.className=cls; if(text!=null) e.textContent=text; return e; }
+  function openReport(){
+    const key=monthKey(view.y,view.m);
+    const name=new Date(view.y,view.m,1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+    const mt=txs.filter(t=>t.date&&t.date.slice(0,7)===key);
+    const spent=mt.filter(t=>t.type==="expense").reduce((s,t)=>s+(+t.amount||0),0);
+    const income=mt.filter(t=>t.type==="income").reduce((s,t)=>s+(+t.amount||0),0);
+    const budget=+settings.budget||0;
+    $("rpMonth").textContent=name;
+    try{ $("rpName").value = localStorage.getItem(LKEY+"-name")||""; }catch(e){}
+    const sum=$("rpSum"); sum.textContent="";
+    [["Spent",fmt(spent)],["Budget",budget?fmt(budget):"–"],["Left",budget?fmt(budget-spent):"–"],["Income",fmt(income)],["Net",(income-spent>=0?"+":"−")+fmt(Math.abs(income-spent))]].forEach(([l,v])=>{
+      const d=el("div"); d.append(el("span","eyebrow",l), el("b",null,v)); sum.append(d);
+    });
+    const byCat=EXP.map(([n,c])=>[n,c,mt.filter(t=>t.type==="expense"&&t.category===n).reduce((s,t)=>s+(+t.amount||0),0)]).filter(x=>x[2]>0).sort((p,q)=>q[2]-p[2]);
+    // pie: reuse the main chart's drawing into a copy
+    drawPie(byCat, spent);
+    const pie=$("rpPie"); pie.textContent="";
+    if(byCat.length){ const clone=$("pieSvg").cloneNode(true); clone.removeAttribute("id"); pie.append(clone); }
+    const ct=$("rpCatTable"); ct.textContent="";
+    const hr=el("tr"); hr.append(el("th",null,"Category"), el("th","r","Amount"), el("th","r","Share")); ct.append(hr);
+    if(!byCat.length){ const r=el("tr"); const td=el("td",null,"No spending recorded this month."); td.colSpan=3; r.append(td); ct.append(r); }
+    byCat.forEach(([n,c,v])=>{ const r=el("tr"); const td=el("td"); const i=el("i"); i.style.background=c; td.append(i, document.createTextNode(n)); r.append(td, el("td","r",fmt(v)), el("td","r",Math.round(v/spent*100)+"%")); ct.append(r); });
+    const lt=$("rpList"); lt.textContent="";
+    const h2=el("tr"); h2.append(el("th",null,"Date"), el("th",null,"Category"), el("th",null,"Note"), el("th","r","Amount")); lt.append(h2);
+    mt.slice().sort((p,q)=>(p.date+(p.createdAt||"")).localeCompare(q.date+(q.createdAt||""))).forEach(t=>{
+      const r=el("tr");
+      const d=new Date(t.date+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short"});
+      const amt=(t.type==="income"?"+":"−")+fmt(+t.amount||0)+(t.currency==="THB"&&t.origAmount?" (฿"+(+t.origAmount).toLocaleString("en-US")+")":"");
+      r.append(el("td",null,d), el("td",null,t.category+(t.type==="income"?" (income)":"")), el("td",null,t.note||""), el("td","r",amt)); lt.append(r);
+    });
+    if(!mt.length){ const r=el("tr"); const td=el("td",null,"No entries this month."); td.colSpan=4; r.append(td); lt.append(r); }
+    $("rpFoot").textContent="Amounts in Chinese yuan (¥). Baht entries converted at the rate on the day they were recorded. Made with Pocket Ledger on "+new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})+".";
+    document.querySelector(".wrap").hidden=true; $("report").hidden=false; window.scrollTo(0,0);
+  }
+  function closeReport(){ $("report").hidden=true; document.querySelector(".wrap").hidden=false; render(); }
+  $("reportBtn").onclick=openReport;
+  $("rpClose").onclick=closeReport;
+  $("rpPrint").onclick=()=>{ try{ window.print(); }catch(e){} };
+  $("rpName").addEventListener("change", ()=>{ try{ localStorage.setItem(LKEY+"-name", $("rpName").value.trim()); }catch(e){} });
 
   // ---------- offline ----------
   if("serviceWorker" in navigator){ window.addEventListener("load", ()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); }); }

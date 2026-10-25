@@ -1,5 +1,5 @@
 // Offline cache for Pocket Ledger. Bump VERSION whenever index.html changes.
-const VERSION = "pocket-ledger-v1";
+const VERSION = "pocket-ledger-v2";
 const FILES = ["./", "./index.html", "./manifest.webmanifest", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {

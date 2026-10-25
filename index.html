@@ -87,7 +87,7 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 .row2{display:grid;grid-template-columns:1fr 140px;gap:8px}
 .field{display:flex;flex-direction:column;gap:4px;min-width:0}
 .field label{font-size:12px;color:var(--muted);font-weight:500}
-.field input{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);padding:10px;font:inherit;min-width:0;width:100%}
+.field input,.field select{border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);padding:10px;font:inherit;min-width:0;width:100%}
 .primary{border:0;border-radius:12px;background:var(--accent);color:var(--accent-ink);font-weight:600;padding:13px;font-size:16px}
 .primary:disabled{opacity:.5;cursor:default}
 .msg{font-size:13px;color:var(--muted);min-height:1em}
@@ -182,7 +182,9 @@ details.settings summary{cursor:pointer;font-family:var(--display);font-weight:6
       <div class="field"><label for="budgetIn">Monthly budget (¥)</label><input id="budgetIn" inputmode="decimal" placeholder="3000"></div>
       <div class="field"><label for="warnIn">Warn me at (% used)</label><input id="warnIn" inputmode="numeric" placeholder="80"></div>
       <div class="field"><label for="rateIn">Baht per ¥1</label><input id="rateIn" inputmode="decimal" placeholder="4.6"></div>
+      <div class="field"><label for="autoRate">Exchange rate</label><select id="autoRate"><option value="auto">Update automatically</option><option value="manual">Set it myself</option></select></div>
     </div>
+    <p class="note" id="rateNote"></p>
     <p class="note">The budget covers expenses only. Income is tracked separately and shown as net for the month. Baht entries are converted to yuan at the rate above when you add them; check the current rate in your bank app now and then and update it here.</p>
     <button class="primary" id="saveSettings" style="width:100%">Save budget</button>
     <div class="msg" id="setMsg" role="status"></div>
@@ -355,7 +357,8 @@ details.settings summary{cursor:pointer;font-family:var(--display);font-weight:6
     const w = parseInt($("warnIn").value||"80",10);
     const r = parseFloat(($("rateIn").value||"").replace(/[,，\s]/g,""));
     if(!(b>0)){ $("setMsg").textContent="Enter a monthly budget above 0."; return; }
-    const next = {budget: Math.round(b*100)/100, warnPct: (w>=1&&w<=100)? w : 80, thbPerCny: r>0 ? Math.round(r*10000)/10000 : (+settings.thbPerCny||4.6)};
+    const next = {budget: Math.round(b*100)/100, warnPct: (w>=1&&w<=100)? w : 80, thbPerCny: r>0 ? Math.round(r*10000)/10000 : (+settings.thbPerCny||4.6),
+      autoRate: $("autoRate").value!=="manual", rateDate: settings.rateDate};
     try{
       if(store){ await store.doc("settings/main").set(next); }
       else { settings=next; saveLocal(); render(); }
@@ -394,8 +397,41 @@ details.settings summary{cursor:pointer;font-family:var(--display);font-weight:6
   $("dateIn").value = todayStr();
   renderChips(); render();
 
+  // ---------- live exchange rate (THB per CNY) ----------
+  function rateNote(){
+    const n=$("rateNote"); if(!n) return;
+    if(settings.autoRate===false){ n.textContent="You're setting the rate yourself."; return; }
+    n.textContent = settings.rateDate ? "Rate updated automatically: ฿" + settings.thbPerCny + " per ¥1 (market rate of " + settings.rateDate + ")." : "The rate updates automatically when you're online.";
+  }
+  async function fetchRate(){
+    const urls=[
+      ["https://api.frankfurter.dev/v1/latest?base=CNY&symbols=THB", d=>[d.rates&&d.rates.THB, d.date]],
+      ["https://api.frankfurter.app/latest?from=CNY&to=THB", d=>[d.rates&&d.rates.THB, d.date]],
+      ["https://open.er-api.com/v6/latest/CNY", d=>[d.rates&&d.rates.THB, (d.time_last_update_utc||"").slice(5,16)]]
+    ];
+    for(const [u,pick] of urls){
+      try{
+        const ctl=new AbortController(); const tm=setTimeout(()=>ctl.abort(),6000);
+        const res=await fetch(u,{signal:ctl.signal, cache:"no-store"}); clearTimeout(tm);
+        if(!res.ok) continue;
+        const [rate,date]=pick(await res.json());
+        if(rate>0) return {rate:Math.round(rate*10000)/10000, date:date||todayStr()};
+      }catch(e){}
+    }
+    return null;
+  }
+  async function refreshRate(){
+    if(settings.autoRate===false || !navigator.onLine) { rateNote(); return; }
+    const r=await fetchRate();
+    if(r){ settings.thbPerCny=r.rate; settings.rateDate=r.date; saveLocal(); $("rateIn").value=r.rate; updateConv(); }
+    rateNote();
+  }
+
   // ---------- standalone: everything lives on this phone ----------
-  local = true; loadLocal(); fillSettings(); render(); updateConv();
+  local = true; loadLocal(); fillSettings(); render(); updateConv(); rateNote(); refreshRate();
+  $("cTHB").addEventListener("click", refreshRate);
+  window.addEventListener("online", refreshRate);
+  $("autoRate").onchange=()=>{ settings.autoRate = $("autoRate").value!=="manual"; saveLocal(); refreshRate(); };
   try{ if(navigator.storage && navigator.storage.persist) navigator.storage.persist(); }catch(e){}
 
   // ---------- backup ----------
@@ -432,7 +468,7 @@ details.settings summary{cursor:pointer;font-family:var(--display);font-weight:6
 
   // ---------- offline ----------
   if("serviceWorker" in navigator){ window.addEventListener("load", ()=>{ navigator.serviceWorker.register("sw.js").catch(()=>{}); }); }
-  function fillSettings(){ if(settings.budget) $("budgetIn").value = settings.budget; $("warnIn").value = settings.warnPct||80; $("rateIn").value = settings.thbPerCny||4.6; if(!settings.budget) $("settingsBox").open = true; }
+  function fillSettings(){ if(settings.budget) $("budgetIn").value = settings.budget; $("warnIn").value = settings.warnPct||80; $("rateIn").value = settings.thbPerCny||4.6; if($("autoRate")) $("autoRate").value = settings.autoRate===false ? "manual" : "auto"; if(!settings.budget) $("settingsBox").open = true; }
   fillSettings();
 })();
 </script>
